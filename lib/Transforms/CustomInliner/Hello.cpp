@@ -22,6 +22,7 @@
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include <set>
 using namespace llvm;
 
 #define DEBUG_TYPE "custom_inliner"
@@ -29,6 +30,7 @@ using namespace llvm;
 namespace {
   struct CustomInliner : public ModulePass {
     static char ID; // Pass identification, replacement for typeid
+    std::set<llvm::Value*> alreadyInlined;
     CustomInliner() : ModulePass(ID) {}
 
     bool runOnModule(Module &M) override {
@@ -39,7 +41,7 @@ namespace {
       }
       return false;
     }
-    
+
     bool inlineNextCallSite(Function &F) {
         for(auto& BB : F) {
             for(auto& I : BB) {
@@ -49,25 +51,29 @@ namespace {
                 if (auto Callee = CS.getCalledFunction())
                   if (Callee->isDeclaration())
                     continue;
-                
+                if(alreadyInlined.count(CS.getCalledFunction())) {
+                    continue;
+                }
+
+                alreadyInlined.insert(CS.getCalledFunction());
+
                 InlineFunctionInfo InlineInfo;
-                
+
                 // Try to inline the function.
-                llvm::outs() << "Attempting to inline " << I << "\n";
+                llvm::outs() << "Attempting to inline " << I.getName() << "\n";
                 if(InlineFunction(CS, InlineInfo, false)) {
                     llvm::outs() << "Success!\n";
                     return true;
                 }
-                llvm::outs() << "Failure!\n";
             }
         }
-        
+
         return false;
     }
-    
+
     void recursiveInlineFunctions(Function &F) {
         bool do_again = true;
-        while(do_again) {
+        while(do_again && F.size() < 10000) {
             do_again = inlineNextCallSite(F);
         }
     }
